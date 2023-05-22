@@ -1,1 +1,3 @@
-# FAANG_Stock_Price_Analysis_TimeSeries
+This project utilizes R to analyze FAANG (Facebook, Amazon, Apple, Netflix, and Google) stock prices. It involves time series forecasting using ARMA, SARIMA, and Holt-Winters models. The dataset consists of historical daily stock prices, and the objective is to predict future trends and patterns. These models capture linear trends, random noise, and seasonality in the data. Performance evaluation is done using metrics like MAE, MSE, and RMSE. The GitHub repository provides code and data, and the project report details data preprocessing, model implementation, and forecasting performance.
+
+Note: This shortened description provides a concise overview of the FAANG stock price analysis project, highlighting the key components and objectives. For a more detailed understanding, please refer to the full description above.
