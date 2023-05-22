@@ -1,0 +1,294 @@
+---
+title: "Facebook Stock Price Analysis"
+author: "Akshay, Usamah, Zainab"
+date: "2023-03-18"
+output: html_document
+---
+
+
+Fitting ARIMA model on facebook data and finding its accuracy in this part.
+
+Years of data availble for each comapny. We use these years as start and and dates when creating a time series. Not sure if analysis should be done on weekly or daily data. 
+
+Facebook: 2012 - 2020
+fb: 1997 - 2020
+Apple: 1980 - 2020
+Netflix: 2002 - 2020
+Google: 2004 - 2020
+
+
+
+#Loading Data
+```{r}
+df <- read.csv(file ="Facebook.csv")
+```
+
+#Data overview
+Date - Date
+Open - Opening price of the stock
+High - Max price of the stock for the day
+Low - Min price of the stock for the day
+Close - Closing price of stock for the day
+Adj Close - Data is adjusted using appropriate split and dividend multipliers for the closing price for the day.
+Volume - Volume are the physical number of shares traded of that stock on a particular day
+
+```{r}
+head(df)
+summary(df)
+dim(df)
+```
+
+#Data cleaning
+Step 1 - to check if Close and Adj. Close have the same values. If yes, we will drop 1 column. 
+```{r}
+identical(df$Close, df$Adj.Close)
+df <- subset(df, select = -Adj.Close)
+```
+
+Step 2 - Checking to see if there are any NaN values. 
+```{r}
+sapply(df, function(col) ifelse(is.numeric(col), any(is.nan(col)), NA))
+```
+there arent any NaN values so we can proceed.
+
+#Visualizing Data
+```{r}
+library(ggplot2)
+library(gridExtra)
+options(repr.plot.width=12, repr.plot.height=12) 
+
+p1 = ggplot(df, aes(Open)) + geom_histogram(bins = 50, aes(y = ..density..), col = "orange", fill = "red", alpha = 0.3) + geom_density()# + xlim(c(0, 1000))
+
+p2 = ggplot(df, aes(High)) + geom_histogram(bins = 50, aes(y = ..density..), col = "green", fill = "red", alpha = 0.3) + geom_density()# + xlim(c(0, 1000))
+
+p3 = ggplot(df, aes(Low)) + geom_histogram(bins = 50, aes(y = ..density..), col = "violet", fill = "red", alpha = 0.3) + geom_density()# + xlim(c(0, 1000))
+
+p4 = ggplot(df, aes(Close)) + geom_histogram(bins = 50, aes(y = ..density..), col = "yellow", fill = "red", alpha = 0.3) + geom_density()# + xlim(c(0, 1000))
+
+grid.arrange(p1,p2,p3,p4, nrow=2,ncol=2)
+```
+
+Step 3 - Since we are not much concerned about fluctuations in stock price in hours, we will create a new column that averages out the Opening, Closing, Lowest, and Highest price of the stock, this way we'll have the mean stock price for the day, and perform a Time Series Analysis on that.
+
+```{r}
+df$Mean.Price <- apply(df[, c("Open", "Close", "High", "Low")], 1, mean)
+df <- subset(df, select = c(Date, Mean.Price, Volume))
+```
+
+```{r}
+head(df)
+```
+
+```{r}
+ncol(df)
+```
+
+
+#Creating a time series object
+```{r}
+price.ts=df[,2]
+head(price.ts)
+```
+
+Since original data has daily frequency, we can use it as it is for daily time series. 
+```{r}
+daily.price = ts(price.ts)
+plot(daily.price, ylab = "Mean Price", xlab = "Time", main = "Mean Daily Price", type = "l")
+```
+#Fitting a Lowess Curve
+```{r}
+plot(daily.price)
+library(Kendall)
+# calculate the lowess curve for the time series
+lowess_fit <- lowess(time(daily.price), daily.price)
+lines(lowess_fit, col = "red", lwd = 2)
+```
+
+#Model Decomposition
+To get a separate graph of Seasonality, Trend, and Noise. 
+```{r}
+library(ggfortify)
+daily.price_ts <- ts(daily.price, frequency = 365)
+decomposed_daily.price <- decompose(daily.price_ts)
+autoplot(decomposed_daily.price)
+```
+
+
+#ACF & PACF (for Daily)
+```{r}
+acf(daily.price)
+pacf(daily.price)
+```
+#Dicke Fuller Test for Stationarity.
+```{r}
+library(tseries)
+print(adf.test(daily.price)) 
+```
+p-value is 0.07, which is greater than 0.1. We fail to reject null hypothesis, this series is not stationary. 
+
+
+#Differencing a Time Series - to make it Stationary
+Differencing is a common solution used to stationarize the variable.
+We will perform differencing using R function diff.
+
+```{r}
+diff_series <- diff(daily.price, differences=1)
+plot.ts(diff_series)
+```
+
+
+#Dicky Fuller test to check if the new series is stationary. 
+```{r}
+adf.test(diff_series)
+```
+p-value is 0.01. We reject null hypothesis, this series is stationary. 
+
+#ARMA Model - Order Selection
+```{r}
+library(forecast)
+auto.arima(diff_series, seasonal = FALSE) 
+```
+It recommends ARIMA(2, 0, 0) as the order of our arima model when we feed it the differenced series which is stationary. 
+
+
+```{r}
+library(forecast)
+auto.arima(daily.price, seasonal = FALSE) 
+```
+
+It recommends ARIMA(2, 1, 0) as the order of our arima model when we feed the non-stationary series into it. 
+The '1' in the middle indicates that the series needs to be differenced once to become stationary. For visualization purposes, we will input the non-stationary time series into the ARIMA model directly, rather than the differenced series. 
+
+#ARMA Model Creation
+```{r}
+arima_model <- auto.arima(daily.price, max.p = 5, max.q = 5, max.d = 5)
+arima_model
+```
+
+
+#ARMA Model - Forecasting 
+```{r}
+term = 200
+forecast1 = forecast(arima_model, h=term)
+plot(forecast1)
+```
+
+
+#ARMA - Accuracy Check 
+```{r}
+accuracy(forecast1)
+forecast1
+```
+MAPE: mean average prediction error
+accuracy = 100 - MAPE = 100 - 1.23 = 98.77
+
+#SARIMA Model
+```{r}
+library(forecast)
+sarima_model <- auto.arima(daily.price, seasonal = TRUE)
+summary(sarima_model)
+```
+
+#SARIMA - Forecasting
+```{r}
+term = 200
+forecast2 = forecast(sarima_model, h=term)
+plot(forecast2, main = "Forecasts from SARIMA Model")
+```
+#SARIMA - Accuracy Check 
+```{r}
+accuracy(forecast2)
+forecast2
+```
+MAPE: mean average prediction error
+accuracy = 100 - MAPE = 100 - 1.23 = 98.77
+
+
+#HoltWinters Model
+Holt-Winters forecasting, also known as triple exponential smoothing, is a popular method for forecasting time series that have both trend and seasonality components. The method is particularly useful for short to medium-term forecasts. 
+
+```{r}
+# Fit Holt-Winters model to daily.price time series
+hw_model <- HoltWinters(daily.price, beta = FALSE, gamma = FALSE)
+hw_model
+```
+
+#HoltWinters - Forecasting
+```{r}
+library(forecast)
+
+# Generate forecasts for next 2 years (730 days)
+hw_forecast <- forecast(hw_model, h = 730)
+
+# Plot forecasts and actual values
+plot(hw_forecast, main = "Holt-Winters Forecast for Daily Price", xlab = "Date", ylab = "Price")
+lines(daily.price, col = "black")
+legend("topleft", legend = c("Actual Values", "Forecast"), col = c("black", "blue"), lty = 1, bty = "n")
+
+
+```
+
+
+
+
+#Model Evaluation
+This code snippet is performing model evaluation for a time series forecast.
+It creates a time series plot of the residuals from the forecast model, which are the differences between the actual values and the predicted values
+It can help assess the distribution of the residuals.
+A normal distribution of residuals is desirable, indicating that the forecast errors are randomly distributed around zero. 
+If the residuals are not normally distributed, it may suggest that the model is not accounting for some important patterns or features in the time series.
+
+```{r}
+#model evaluation for arima model
+plot.ts(forecast1$residuals)  
+ggplot(data.frame(residuals = forecast1$residuals), aes(residuals)) + geom_histogram(bins = 50, aes(y = ..density..), col = "yellow", fill = "red", alpha = 0.3) + geom_density()
+```
+
+```{r}
+#model evaluation for HW model
+plot.ts(hw_forecast$residuals)  
+ggplot(data.frame(residuals = hw_forecast$residuals), aes(residuals)) + geom_histogram(bins = 50, aes(y = ..density..), col = "yellow", fill = "red", alpha = 0.3) + geom_density()
+```
+
+The forecast errors seem to be normally distributed with mean zero and constant variance for both, ARIMA and HW forecasted values. Therefore, we need additional metrics to compare the two models' performance. 
+
+#Ljung-Box Test 
+Box-Ljung test is a statistical test used to assess the null hypothesis that a set of autocorrelations in a time series are all zero, indicating that the residuals are independent and the model fits the data well.
+
+```{r}
+Box.test(resid(arima_model), lag = 10, type = "Ljung-Box")
+Box.test(resid(hw_model), lag = 10, type = "Ljung-Box")
+
+```
+
+The Box-Ljung test results for ARIMA model show that the test statistic (X-squared) is 12, and the degrees of freedom (df) are 10. The p-value associated with this test statistic is 0.3.
+
+The Box-Ljung test results for Holt Winters model show that the test statistic (X-squared) is 33, and the degrees of freedom (df) are 10. The p-value associated with this test statistic is 0.0003.
+
+ARIMA model: 
+The p-value is used to determine the significance of the test. In this case, since the p-value (0.3) is greater than the commonly used significance level of 0.05, we fail to reject the null hypothesis that the residuals are independent. This suggests that the model fits the data well and that there are no significant autocorrelations in the residuals.
+
+HW model: 
+Since the p-value (0.003) is smaller than the commonly used significance level of 0.05, we reject the null hypothesis that the residuals are independent. This suggests that the model does not fit the data adequately and that there are some significant autocorrelations in the residuals.
+
+#Conclusion 
+
+Which model is better? Three tests: 
+1. Normality of residuals
+2. Box-Ljung test (p-value larger than 0.05 significance level is desired)
+3. Accuracy metrics
+
+Trying to compare the two models by comparing its accuracy.
+
+```{r}
+#comparing accuracies of arima and holt winters forecasts
+acc.arima = accuracy(forecast1)
+acc.hw = accuracy(hw_forecast)
+
+cat("ARIMA Accuracy Measures:", "\n")
+acc.arima
+
+cat("Holt-Winters:", acc.hw, "\n")
+```
+
+For this dataset, the arima model performs better than the holt winters forecast as all error metrics given above (mean error, root mean squared error, mean absolute error, mean percentage error etc) are lower for arima model. Moreover, ARIMA model passes the Box-Ljung test of no autocorrelation between the residuals, whereas Holt Winters forecast does not.  
